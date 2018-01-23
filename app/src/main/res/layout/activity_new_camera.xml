@@ -6,16 +6,19 @@
     android:background="@color/black"
     tools:context="com.hscam.androidcamtest.ui.activities.CameraActivity">
 
-    <com.hscam.androidcamtest.ui.views.AutoFitTextureView
-        android:id="@+id/camera_preview"
+    <FrameLayout
+        android:id="@+id/preview"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_centerInParent="true"
         />
 
-    <com.hscam.androidcamtest.ui.views.AutoFitCameraOverlay
-        android:id="@+id/camera_overlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerInParent="true" />
+    <Button
+        android:id="@+id/btn_process"
+        android:layout_width="100dp"
+        android:layout_height="50dp"
+        android:padding="10dp"
+        android:text="@string/start"
+        android:layout_centerVertical="true"
+        />
 </RelativeLayout>

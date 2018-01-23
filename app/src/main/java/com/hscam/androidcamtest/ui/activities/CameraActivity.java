@@ -1,4 +1,4 @@
-package com.hscam.androidcamtest;
+package com.hscam.androidcamtest.ui.activities;
 
 import android.Manifest;
 import android.app.Activity;
@@ -9,6 +9,7 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -16,7 +17,11 @@ import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.Face;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -37,14 +42,15 @@ import android.view.TextureView;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import com.hscam.androidcamtest.views.AutoFitTextureView;
+import com.hscam.androidcamtest.R;
+import com.hscam.androidcamtest.ui.views.AutoFitCameraOverlay;
+import com.hscam.androidcamtest.ui.views.AutoFitTextureView;
 
 import java.util.Arrays;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 public class CameraActivity extends AppCompatActivity {
-
     private AutoFitTextureView mTextureView;
     private static final int REQUEST_CAMERA_PERMISSION = 1;
     private static final String CONFIRM_DIALOG = "confirm_dialog";
@@ -77,6 +83,12 @@ public class CameraActivity extends AppCompatActivity {
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
 
     private long prevTime = 0;
+
+    private AutoFitCameraOverlay mCameraOverlay;
+
+    private CameraCharacteristics characteristics = null;
+
+    private Rect mSensorRect = null;
 
     static {
         ORIENTATIONS.append(Surface.ROTATION_0, 90);
@@ -161,6 +173,7 @@ public class CameraActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mTextureView = (AutoFitTextureView) findViewById(R.id.camera_preview);
+        mCameraOverlay = (AutoFitCameraOverlay) findViewById(R.id.camera_overlay);
         mTextureView.setAspectRatio(ASPECT_RATIO_X, ASPECT_RATIO_Y);
     }
 
@@ -232,7 +245,7 @@ public class CameraActivity extends AppCompatActivity {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             for (String cameraId : manager.getCameraIdList()) {
-                CameraCharacteristics characteristics
+                characteristics
                         = manager.getCameraCharacteristics(cameraId);
 
                 Range<Integer>[] frameRates = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
@@ -304,6 +317,61 @@ public class CameraActivity extends AppCompatActivity {
         }
     }
 
+    private CameraCaptureSession.CaptureCallback mPreviewCallBack = new CameraCaptureSession.CaptureCallback() {
+        @Override
+        public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
+            super.onCaptureStarted(session, request, timestamp, frameNumber);
+        }
+
+        @Override
+        public void onCaptureProgressed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureResult partialResult) {
+            super.onCaptureProgressed(session, request, partialResult);
+        }
+
+        @Override
+        public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+
+            super.onCaptureCompleted(session, request, result);
+            process(result);
+        }
+
+        @Override
+        public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+            super.onCaptureFailed(session, request, failure);
+        }
+    };
+
+    private void process(TotalCaptureResult result){
+        final Face[] camera_faces = result.get(CaptureResult.STATISTICS_FACES);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (camera_faces == null){
+                    mCameraOverlay.setFaces(mSensorRect, new Face[]{});
+                }else{
+                    mCameraOverlay.setFaces(mSensorRect, camera_faces);
+                }
+            }
+        });
+    }
+
+    private Rect getViewableRect() {
+        if( mPreviewRequestBuilder != null ) {
+            Rect crop_rect = mPreviewRequestBuilder.get(CaptureRequest.SCALER_CROP_REGION);
+            if( crop_rect != null ) {
+                return crop_rect;
+            }
+        }
+        Rect sensor_rect = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        sensor_rect.right -= sensor_rect.left;
+        sensor_rect.left = 0;
+        sensor_rect.bottom -= sensor_rect.top;
+        sensor_rect.top = 0;
+        return sensor_rect;
+    }
+
+
+
     private void createCameraPreviewSession() {
         try {
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
@@ -315,8 +383,27 @@ public class CameraActivity extends AppCompatActivity {
 
             mPreviewRequestBuilder
                     = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
+
+            Rect sensor_rect = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+            int left = sensor_rect.width()/2;
+            int right = left;
+            int top = sensor_rect.height()/2;
+            int bottom = top;
+            int hwidth = (int)(sensor_rect.width() / (2.0));
+            int hheight = (int)(sensor_rect.height() / (2.0));
+            left -= hwidth;
+            right += hwidth;
+            top -= hheight;
+            bottom += hheight;
+
+
+            mPreviewRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, new Rect(left, top, right, bottom));
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_PREVIEW);
+            mPreviewRequestBuilder.set(CaptureRequest.STATISTICS_FACE_DETECT_MODE, CaptureRequest.STATISTICS_FACE_DETECT_MODE_FULL);
+
             mPreviewRequestBuilder.addTarget(surface);
+
+            mSensorRect = getViewableRect();
 
             mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
@@ -330,12 +417,12 @@ public class CameraActivity extends AppCompatActivity {
                             mCaptureSession = cameraCaptureSession;
                             try {
 
-                                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<Integer>(60, 60));
+//                                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, new Range<Integer>(60, 60));
 
                                 mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
                                 mPreviewRequest = mPreviewRequestBuilder.build();
                                 mCaptureSession.setRepeatingRequest(mPreviewRequest,
-                                        null, mBackgroundHandler);
+                                        mPreviewCallBack, mBackgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -387,7 +474,6 @@ public class CameraActivity extends AppCompatActivity {
                     })
                     .create();
         }
-
     }
 
     public static class ConfirmationDialog extends DialogFragment {

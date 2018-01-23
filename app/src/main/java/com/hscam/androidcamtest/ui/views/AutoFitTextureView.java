@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.hscam.androidcamtest.views;
+package com.hscam.androidcamtest.ui.views;
 
 import android.content.Context;
 import android.util.AttributeSet;
@@ -25,8 +25,8 @@ import android.view.TextureView;
  */
 public class AutoFitTextureView extends TextureView {
 
-    private int mRatioWidth = 0;
-    private int mRatioHeight = 0;
+    private int mRatioWidth = 16;
+    private int mRatioHeight = 9;
 
     public AutoFitTextureView(Context context) {
         this(context, null);
@@ -72,5 +72,4 @@ public class AutoFitTextureView extends TextureView {
             }
         }
     }
-
 }
